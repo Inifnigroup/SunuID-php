@@ -2,7 +2,7 @@
     "name": "sunuid/php-sdk",
     "description": "SDK PHP pour l'intégration des QR codes d'authentification et KYC SunuID",
     "type": "library",
-    "version": "1.0.0",
+
     "license": "MIT",
     "authors": [
         {
@@ -60,11 +60,5 @@
     "support": {
         "issues": "https://github.com/sunuid/php-sdk/issues",
         "source": "https://github.com/sunuid/php-sdk"
-    },
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/sunuid/php-sdk"
-        }
-    ]
+    }
 } 
