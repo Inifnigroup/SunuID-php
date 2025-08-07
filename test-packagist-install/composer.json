@@ -1,0 +1,9 @@
+{
+    "name": "test/sunuid-install",
+    "description": "Test d'installation du SDK SunuID",
+    "require": {
+        "sunuid/php-sdk": "^1.0"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
