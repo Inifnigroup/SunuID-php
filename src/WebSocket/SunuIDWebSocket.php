@@ -1,0 +1,598 @@
+<?php
+
+namespace SunuID\WebSocket;
+
+use ElephantIO\Engine\SocketIO\Version2X;
+use ElephantIO\Engine\SocketIO\Version1X;
+use ElephantIO\Engine\SocketIO\Version0X;
+use ElephantIO\Exception\ServerConnectionFailureException;
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+use Exception;
+
+/**
+ * Client WebSocket pour le SDK SunuID PHP
+ * 
+ * Permet la communication en temps réel avec l'API SunuID
+ * pour recevoir les notifications d'authentification et KYC
+ * 
+ * @version 1.0.0
+ * @author SunuID Team
+ * @license MIT
+ */
+class SunuIDWebSocket
+{
+    /**
+     * Configuration par défaut
+     */
+    private const DEFAULT_CONFIG = [
+        'ws_url' => 'wss://samasocket.fayma.sn:9443',
+        'socketio_version' => '4',
+        'connection_timeout' => 10,
+        'enable_logs' => true,
+        'log_level' => Logger::INFO,
+        'log_file' => 'sunuid-websocket.log',
+        'transports' => ['websocket', 'polling'],
+        'query_params' => []
+    ];
+
+    /**
+     * Configuration actuelle
+     */
+    private array $config;
+
+    /**
+     * Client Socket.IO
+     */
+    private $connection = null;
+
+    /**
+     * Logger
+     */
+    private Logger $logger;
+
+    /**
+     * Statut de connexion
+     */
+    private bool $isConnected = false;
+
+    /**
+     * Callbacks pour les événements
+     */
+    private array $callbacks = [
+        'connect' => [],
+        'disconnect' => [],
+        'message' => [],
+        'error' => [],
+        'auth_success' => [],
+        'auth_failure' => [],
+        'kyc_complete' => [],
+        'kyc_pending' => [],
+        'session_expired' => []
+    ];
+
+    /**
+     * Sessions actives
+     */
+    private array $activeSessions = [];
+
+    /**
+     * Constructeur
+     */
+    public function __construct(array $config = [])
+    {
+        $this->config = array_merge(self::DEFAULT_CONFIG, $config);
+        $this->initializeComponents();
+    }
+
+    /**
+     * Initialiser les composants
+     */
+    private function initializeComponents(): void
+    {
+        // Initialiser le logger
+        $this->logger = new Logger('SunuIDWebSocket');
+        if ($this->config['enable_logs']) {
+            $this->logger->pushHandler(new StreamHandler($this->config['log_file'], $this->config['log_level']));
+        }
+    }
+
+    /**
+     * Se connecter au Socket.IO
+     */
+    public function connect(): bool
+    {
+        try {
+            $this->logInfo('Tentative de connexion Socket.IO', ['url' => $this->config['ws_url']]);
+
+            // Créer le client Socket.IO selon la version
+            switch ($this->config['socketio_version']) {
+                case '0':
+                    $this->connection = new Version0X($this->config['ws_url'], [
+                        'timeout' => $this->config['connection_timeout']
+                    ]);
+                    break;
+                case '1':
+                    $this->connection = new Version1X($this->config['ws_url'], [
+                        'timeout' => $this->config['connection_timeout']
+                    ]);
+                    break;
+                case '2':
+                default:
+                    $this->connection = new Version2X($this->config['ws_url'], [
+                        'timeout' => $this->config['connection_timeout'],
+                        'transports' => $this->config['transports'],
+                        'query' => $this->config['query_params']
+                    ]);
+                    break;
+            }
+
+            // Établir la connexion
+            $this->connection->connect();
+            $this->isConnected = true;
+            
+            $this->logInfo('Connexion Socket.IO établie');
+            $this->triggerCallbacks('connect');
+
+            return true;
+        } catch (ServerConnectionFailureException $e) {
+            $this->logError('Échec de connexion Socket.IO', ['error' => $e->getMessage()]);
+            $this->triggerCallbacks('error', ['error' => $e->getMessage()]);
+            return false;
+        } catch (Exception $e) {
+            $this->logError('Erreur lors de la connexion Socket.IO', ['error' => $e->getMessage()]);
+            $this->triggerCallbacks('error', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /**
+     * Recevoir un message du Socket.IO
+     */
+    public function receive(): ?array
+    {
+        if (!$this->connection || !$this->isConnected) {
+            return null;
+        }
+
+        try {
+            $message = $this->connection->read();
+            
+            if ($message) {
+                $data = is_array($message) ? $message : json_decode($message, true);
+                
+                if ($data) {
+                    $this->handleMessage($data);
+                    return $data;
+                }
+            }
+        } catch (Exception $e) {
+            $this->logError('Erreur lors de la réception', ['error' => $e->getMessage()]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Gérer les messages reçus
+     */
+    private function handleMessage(array $data): void
+    {
+        $this->logInfo('Message WebSocket reçu', ['type' => $data['type'] ?? 'unknown']);
+
+        // Traiter selon le type de message
+        switch ($data['type'] ?? '') {
+            case 'auth_success':
+                $this->handleAuthSuccess($data);
+                break;
+                
+            case 'auth_failure':
+                $this->handleAuthFailure($data);
+                break;
+                
+            case 'kyc_complete':
+                $this->handleKycComplete($data);
+                break;
+                
+            case 'kyc_pending':
+                $this->handleKycPending($data);
+                break;
+                
+            case 'session_expired':
+                $this->handleSessionExpired($data);
+                break;
+                
+            case 'heartbeat':
+                $this->handleHeartbeat($data);
+                break;
+                
+            default:
+                $this->triggerCallbacks('message', $data);
+                break;
+        }
+    }
+
+    /**
+     * Gérer le succès d'authentification
+     */
+    private function handleAuthSuccess(array $data): void
+    {
+        $sessionId = $data['session_id'] ?? null;
+        $userId = $data['user_id'] ?? null;
+        
+        $this->logInfo('Authentification réussie', [
+            'session_id' => $sessionId,
+            'user_id' => $userId
+        ]);
+
+        // Mettre à jour la session
+        if ($sessionId) {
+            $this->activeSessions[$sessionId] = array_merge(
+                $this->activeSessions[$sessionId] ?? [],
+                ['status' => 'authenticated', 'user_id' => $userId]
+            );
+        }
+
+        $this->triggerCallbacks('auth_success', $data);
+    }
+
+    /**
+     * Gérer l'échec d'authentification
+     */
+    private function handleAuthFailure(array $data): void
+    {
+        $sessionId = $data['session_id'] ?? null;
+        $reason = $data['reason'] ?? 'unknown';
+        
+        $this->logWarning('Échec d\'authentification', [
+            'session_id' => $sessionId,
+            'reason' => $reason
+        ]);
+
+        // Mettre à jour la session
+        if ($sessionId) {
+            $this->activeSessions[$sessionId] = array_merge(
+                $this->activeSessions[$sessionId] ?? [],
+                ['status' => 'failed', 'reason' => $reason]
+            );
+        }
+
+        $this->triggerCallbacks('auth_failure', $data);
+    }
+
+    /**
+     * Gérer la completion KYC
+     */
+    private function handleKycComplete(array $data): void
+    {
+        $sessionId = $data['session_id'] ?? null;
+        $kycData = $data['kyc_data'] ?? [];
+        
+        $this->logInfo('KYC complété', [
+            'session_id' => $sessionId,
+            'kyc_data' => $kycData
+        ]);
+
+        // Mettre à jour la session
+        if ($sessionId) {
+            $this->activeSessions[$sessionId] = array_merge(
+                $this->activeSessions[$sessionId] ?? [],
+                ['status' => 'kyc_complete', 'kyc_data' => $kycData]
+            );
+        }
+
+        $this->triggerCallbacks('kyc_complete', $data);
+    }
+
+    /**
+     * Gérer le KYC en attente
+     */
+    private function handleKycPending(array $data): void
+    {
+        $sessionId = $data['session_id'] ?? null;
+        $pendingSteps = $data['pending_steps'] ?? [];
+        
+        $this->logInfo('KYC en attente', [
+            'session_id' => $sessionId,
+            'pending_steps' => $pendingSteps
+        ]);
+
+        // Mettre à jour la session
+        if ($sessionId) {
+            $this->activeSessions[$sessionId] = array_merge(
+                $this->activeSessions[$sessionId] ?? [],
+                ['status' => 'kyc_pending', 'pending_steps' => $pendingSteps]
+            );
+        }
+
+        $this->triggerCallbacks('kyc_pending', $data);
+    }
+
+    /**
+     * Gérer l'expiration de session
+     */
+    private function handleSessionExpired(array $data): void
+    {
+        $sessionId = $data['session_id'] ?? null;
+        
+        $this->logWarning('Session expirée', ['session_id' => $sessionId]);
+
+        // Supprimer la session
+        if ($sessionId && isset($this->activeSessions[$sessionId])) {
+            unset($this->activeSessions[$sessionId]);
+        }
+
+        $this->triggerCallbacks('session_expired', $data);
+    }
+
+    /**
+     * Gérer le heartbeat
+     */
+    private function handleHeartbeat(array $data): void
+    {
+        $this->logInfo('Heartbeat reçu', ['timestamp' => $data['timestamp'] ?? time()]);
+        
+        // Répondre au heartbeat
+        $this->sendHeartbeat();
+    }
+
+    /**
+     * Gérer la déconnexion
+     */
+    private function handleDisconnect($code, $reason): void
+    {
+        $this->isConnected = false;
+        $this->connection = null;
+        
+        $this->logWarning('Déconnexion WebSocket', [
+            'code' => $code,
+            'reason' => $reason
+        ]);
+
+        $this->triggerCallbacks('disconnect', ['code' => $code, 'reason' => $reason]);
+
+        // Tentative de reconnexion automatique
+        $this->scheduleReconnect();
+    }
+
+    /**
+     * Gérer les erreurs
+     */
+    private function handleError(Exception $e): void
+    {
+        $this->logError('Erreur WebSocket', ['error' => $e->getMessage()]);
+        $this->triggerCallbacks('error', ['error' => $e->getMessage()]);
+    }
+
+    /**
+     * Programmer une reconnexion
+     */
+    private function scheduleReconnect(): void
+    {
+        if ($this->reconnectAttempts >= $this->config['max_reconnect_attempts']) {
+            $this->logError('Nombre maximum de tentatives de reconnexion atteint');
+            return;
+        }
+
+        $this->reconnectAttempts++;
+        $delay = $this->config['reconnect_interval'] * $this->reconnectAttempts;
+
+        $this->logInfo('Programmation de reconnexion', [
+            'attempt' => $this->reconnectAttempts,
+            'delay' => $delay
+        ]);
+
+        $this->loop->addTimer($delay / 1000, function () {
+            $this->connect();
+        });
+    }
+
+    /**
+     * Démarrer le heartbeat
+     */
+    private function startHeartbeat(): void
+    {
+        $this->loop->addPeriodicTimer($this->config['heartbeat_interval'] / 1000, function () {
+            if ($this->isConnected) {
+                $this->sendHeartbeat();
+            }
+        });
+    }
+
+    /**
+     * Envoyer un heartbeat
+     */
+    private function sendHeartbeat(): void
+    {
+        if (!$this->connection) {
+            return;
+        }
+
+        $heartbeat = json_encode([
+            'type' => 'heartbeat',
+            'timestamp' => time()
+        ]);
+
+        $this->connection->send($heartbeat);
+        $this->logInfo('Heartbeat envoyé');
+    }
+
+    /**
+     * S'abonner à une session
+     */
+    public function subscribeToSession(string $sessionId): bool
+    {
+        if (!$this->isConnected) {
+            $this->logWarning('Impossible de s\'abonner : non connecté');
+            return false;
+        }
+
+        try {
+            $this->connection->emit('subscribe', [
+                'session_id' => $sessionId
+            ]);
+            
+            $this->activeSessions[$sessionId] = [
+                'status' => 'subscribed',
+                'subscribed_at' => time()
+            ];
+
+            $this->logInfo('Abonnement à la session', ['session_id' => $sessionId]);
+            return true;
+        } catch (Exception $e) {
+            $this->logError('Erreur lors de l\'abonnement', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /**
+     * Se désabonner d'une session
+     */
+    public function unsubscribeFromSession(string $sessionId): bool
+    {
+        if (!$this->isConnected) {
+            return false;
+        }
+
+        try {
+            $this->connection->emit('unsubscribe', [
+                'session_id' => $sessionId
+            ]);
+            
+            if (isset($this->activeSessions[$sessionId])) {
+                unset($this->activeSessions[$sessionId]);
+            }
+
+            $this->logInfo('Désabonnement de la session', ['session_id' => $sessionId]);
+            return true;
+        } catch (Exception $e) {
+            $this->logError('Erreur lors du désabonnement', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /**
+     * Envoyer un message personnalisé
+     */
+    public function sendMessage(array $data): bool
+    {
+        if (!$this->isConnected) {
+            return false;
+        }
+
+        try {
+            $event = $data['event'] ?? 'message';
+            $payload = $data['data'] ?? $data;
+            
+            $this->connection->emit($event, $payload);
+            
+            $this->logInfo('Message envoyé', ['event' => $event]);
+            return true;
+        } catch (Exception $e) {
+            $this->logError('Erreur lors de l\'envoi', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+
+
+    /**
+     * Déclencher les callbacks pour un événement
+     */
+    private function triggerCallbacks(string $event, array $data = []): void
+    {
+        if (isset($this->callbacks[$event])) {
+            foreach ($this->callbacks[$event] as $callback) {
+                try {
+                    $callback($data);
+                } catch (Exception $e) {
+                    $this->logError('Erreur dans le callback', [
+                        'event' => $event,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+        }
+    }
+
+    /**
+     * Se déconnecter
+     */
+    public function disconnect(): void
+    {
+        if ($this->connection) {
+            $this->connection->close();
+        }
+        
+        $this->isConnected = false;
+        $this->connection = null;
+        
+        $this->logInfo('Déconnexion Socket.IO manuelle');
+    }
+
+    /**
+     * Écouter un événement Socket.IO
+     */
+    public function on(string $event, callable $callback): void
+    {
+        if (!$this->connection) {
+            $this->logWarning('Impossible d\'écouter l\'événement : non connecté');
+            return;
+        }
+
+        try {
+            $this->connection->on($event, $callback);
+            $this->logInfo('Écouteur ajouté pour l\'événement', ['event' => $event]);
+        } catch (Exception $e) {
+            $this->logError('Erreur lors de l\'ajout de l\'écouteur', ['error' => $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Vérifier si connecté
+     */
+    public function isConnected(): bool
+    {
+        return $this->isConnected;
+    }
+
+    /**
+     * Obtenir les sessions actives
+     */
+    public function getActiveSessions(): array
+    {
+        return $this->activeSessions;
+    }
+
+    /**
+     * Obtenir la configuration
+     */
+    public function getConfig(): array
+    {
+        return $this->config;
+    }
+
+    /**
+     * Logger les informations
+     */
+    private function logInfo(string $message, array $context = []): void
+    {
+        $this->logger->info($message, $context);
+    }
+
+    /**
+     * Logger les avertissements
+     */
+    private function logWarning(string $message, array $context = []): void
+    {
+        $this->logger->warning($message, $context);
+    }
+
+    /**
+     * Logger les erreurs
+     */
+    private function logError(string $message, array $context = []): void
+    {
+        $this->logger->error($message, $context);
+    }
+} 

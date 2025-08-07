@@ -76,6 +76,12 @@ if ($sunuid->init()) {
 | `log_file` | string | `sunuid.log` | Fichier de log |
 | `request_timeout` | int | `10` | Timeout des requêtes (secondes) |
 | `max_retries` | int | `3` | Nombre max de tentatives |
+| `enable_websocket` | bool | `false` | Activer les Socket.IO |
+| `websocket_url` | string | `wss://samasocket.fayma.sn:9443` | URL Socket.IO |
+| `websocket_auto_connect` | bool | `false` | Connexion automatique |
+| `websocket_socketio_version` | string | `4` | Version Socket.IO (2, 3, 4) |
+| `websocket_transports` | array | `['websocket', 'polling']` | Transports supportés |
+| `websocket_query_params` | array | `[]` | Paramètres de requête additionnels |
 
 ## 🔧 Fonctionnalités
 
@@ -89,6 +95,49 @@ $result = $sunuid->generateQR('https://votre-site.com/auth');
 $result = $sunuid->generateQRLocal('https://votre-site.com', [
     'size' => 300,
     'margin' => 10
+]);
+
+// QR code avec WebSocket automatique
+$result = $sunuid->generateQRWithWebSocket('https://votre-site.com/auth');
+```
+
+### Socket.IO - Notifications Temps Réel
+
+```php
+// Configuration avec Socket.IO
+$config = [
+    'client_id' => 'votre_client_id',
+    'secret_id' => 'votre_secret_id',
+    'partner_name' => 'Votre Entreprise',
+    'enable_websocket' => true,
+    'websocket_auto_connect' => true,
+    'websocket_url' => 'wss://samasocket.fayma.sn:9443',
+    'websocket_socketio_version' => '4',
+    'websocket_transports' => ['websocket', 'polling']
+];
+
+$sunuid = new SunuID($config);
+
+// Initialiser et connecter le Socket.IO
+$sunuid->initWebSocket();
+$sunuid->connectWebSocket();
+
+// Configurer les callbacks pour les événements
+$sunuid->onWebSocketEvent('auth_success', function ($data) {
+    echo "✅ Authentification réussie pour la session: " . $data['session_id'];
+});
+
+$sunuid->onWebSocketEvent('kyc_complete', function ($data) {
+    echo "✅ KYC complété pour la session: " . $data['session_id'];
+});
+
+// S'abonner à une session spécifique
+$sunuid->subscribeToSession('session_id_123');
+
+// Envoyer un message personnalisé
+$sunuid->sendWebSocketMessage([
+    'event' => 'custom_event',
+    'data' => ['message' => 'Hello!']
 ]);
 ```
 

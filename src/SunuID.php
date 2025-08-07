@@ -11,6 +11,7 @@ use Firebase\JWT\Key;
 use Monolog\Logger;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\RotatingFileHandler;
+use SunuID\WebSocket\SunuIDWebSocket;
 
 /**
  * SDK PHP pour l'intégration des QR codes d'authentification et KYC SunuID
@@ -42,7 +43,13 @@ class SunuID
         'secure_init' => false,
         'secure_init_url' => 'https://api.sunuid.fayma.sn/secure-init.php',
         'force_remote_server' => true,
-        'use_local_fallback' => false
+        'use_local_fallback' => false,
+        'enable_websocket' => false,
+        'websocket_url' => 'wss://samasocket.fayma.sn:9443',
+        'websocket_auto_connect' => false,
+        'websocket_socketio_version' => '2',
+        'websocket_transports' => ['websocket', 'polling'],
+        'websocket_query_params' => []
     ];
 
     /**
@@ -64,6 +71,11 @@ class SunuID
      * QR Code Writer
      */
     private ?PngWriter $qrWriter = null;
+
+    /**
+     * Client WebSocket
+     */
+    private ?SunuIDWebSocket $webSocket = null;
 
     /**
      * Statut d'initialisation
@@ -568,5 +580,187 @@ class SunuID
     public function getLogger(): Logger
     {
         return $this->logger;
+    }
+
+    /**
+     * Initialiser le client WebSocket
+     */
+    public function initWebSocket(): bool
+    {
+        if (!$this->config['enable_websocket']) {
+            $this->logWarning('WebSocket désactivé dans la configuration');
+            return false;
+        }
+
+        if ($this->webSocket) {
+            $this->logInfo('WebSocket déjà initialisé');
+            return true;
+        }
+
+        try {
+            $wsConfig = [
+                'ws_url' => $this->config['websocket_url'],
+                'socketio_version' => $this->config['websocket_socketio_version'],
+                'transports' => $this->config['websocket_transports'],
+                'query_params' => array_merge($this->config['websocket_query_params'], [
+                    'token' => $this->config['client_id'],
+                    'type' => 'web',
+                    'userId' => $this->config['client_id'],
+                    'username' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+                ]),
+                'enable_logs' => $this->config['enable_logs'],
+                'log_level' => $this->config['log_level'],
+                'log_file' => 'sunuid-websocket.log'
+            ];
+
+            $this->webSocket = new SunuIDWebSocket($wsConfig);
+            $this->logInfo('Client WebSocket initialisé');
+
+            // Connexion automatique si configuré
+            if ($this->config['websocket_auto_connect']) {
+                $this->connectWebSocket();
+            }
+
+            return true;
+        } catch (Exception $e) {
+            $this->logError('Erreur lors de l\'initialisation WebSocket', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /**
+     * Se connecter au WebSocket
+     */
+    public function connectWebSocket(): bool
+    {
+        if (!$this->webSocket) {
+            if (!$this->initWebSocket()) {
+                return false;
+            }
+        }
+
+        try {
+            $result = $this->webSocket->connect();
+            if ($result) {
+                $this->logInfo('Connexion WebSocket établie');
+            }
+            return $result;
+        } catch (Exception $e) {
+            $this->logError('Erreur lors de la connexion WebSocket', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /**
+     * S'abonner à une session via WebSocket
+     */
+    public function subscribeToSession(string $sessionId): bool
+    {
+        if (!$this->webSocket) {
+            $this->logWarning('WebSocket non initialisé');
+            return false;
+        }
+
+        return $this->webSocket->subscribeToSession($sessionId);
+    }
+
+    /**
+     * Se désabonner d'une session via WebSocket
+     */
+    public function unsubscribeFromSession(string $sessionId): bool
+    {
+        if (!$this->webSocket) {
+            return false;
+        }
+
+        return $this->webSocket->unsubscribeFromSession($sessionId);
+    }
+
+    /**
+     * Ajouter un callback pour un événement WebSocket
+     */
+    public function onWebSocketEvent(string $event, callable $callback): void
+    {
+        if (!$this->webSocket) {
+            $this->logWarning('WebSocket non initialisé');
+            return;
+        }
+
+        $this->webSocket->on($event, $callback);
+    }
+
+    /**
+     * Envoyer un message via WebSocket
+     */
+    public function sendWebSocketMessage(array $data): bool
+    {
+        if (!$this->webSocket) {
+            return false;
+        }
+
+        return $this->webSocket->sendMessage($data);
+    }
+
+    /**
+     * Se déconnecter du WebSocket
+     */
+    public function disconnectWebSocket(): void
+    {
+        if ($this->webSocket) {
+            $this->webSocket->disconnect();
+            $this->webSocket = null;
+            $this->logInfo('Déconnexion WebSocket');
+        }
+    }
+
+    /**
+     * Vérifier si le WebSocket est connecté
+     */
+    public function isWebSocketConnected(): bool
+    {
+        return $this->webSocket && $this->webSocket->isConnected();
+    }
+
+    /**
+     * Obtenir le client WebSocket
+     */
+    public function getWebSocket(): ?SunuIDWebSocket
+    {
+        return $this->webSocket;
+    }
+
+    /**
+     * Obtenir les sessions actives du WebSocket
+     */
+    public function getWebSocketActiveSessions(): array
+    {
+        if (!$this->webSocket) {
+            return [];
+        }
+
+        return $this->webSocket->getActiveSessions();
+    }
+
+
+
+    /**
+     * Générer un QR code avec abonnement WebSocket automatique
+     */
+    public function generateQRWithWebSocket(?string $content = null, array $options = []): array
+    {
+        // Générer le QR code normalement
+        $result = $this->generateQR($content, $options);
+
+        if ($result['success'] && isset($result['data']['session_id'])) {
+            $sessionId = $result['data']['session_id'];
+
+            // S'abonner automatiquement à la session
+            if ($this->config['enable_websocket']) {
+                $this->subscribeToSession($sessionId);
+                $this->logInfo('Abonnement automatique à la session', ['session_id' => $sessionId]);
+            }
+        }
+
+        return $result;
     }
 } 
