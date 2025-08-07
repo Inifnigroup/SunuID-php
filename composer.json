@@ -1,0 +1,70 @@
+{
+    "name": "sunuid/php-sdk",
+    "description": "SDK PHP pour l'intégration des QR codes d'authentification et KYC SunuID",
+    "type": "library",
+    "version": "1.0.0",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "SunuID Team",
+            "email": "dev@sunuid.sn",
+            "homepage": "https://sunuid.sn"
+        }
+    ],
+    "require": {
+        "php": ">=7.4",
+        "guzzlehttp/guzzle": "^7.0",
+        "endroid/qr-code": "^4.0",
+        "firebase/php-jwt": "^6.0",
+        "monolog/monolog": "^2.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.0",
+        "phpstan/phpstan": "^1.0",
+        "squizlabs/php_codesniffer": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "SunuID\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SunuID\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "test-coverage": "phpunit --coverage-html coverage",
+        "stan": "phpstan analyse src tests",
+        "cs": "phpcs src tests",
+        "cs-fix": "phpcbf src tests"
+    },
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "keywords": [
+        "sunuid",
+        "authentication",
+        "kyc",
+        "qr-code",
+        "identity",
+        "verification",
+        "sdk",
+        "php"
+    ],
+    "homepage": "https://docs.sunuid.sn",
+    "support": {
+        "issues": "https://github.com/sunuid/php-sdk/issues",
+        "source": "https://github.com/sunuid/php-sdk"
+    },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/sunuid/php-sdk"
+        }
+    ]
+} 
