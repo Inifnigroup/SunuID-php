@@ -535,16 +535,11 @@ class SunuIDWebSocket
      */
     public function on(string $event, callable $callback): void
     {
-        if (!$this->connection) {
-            $this->logWarning('Impossible d\'écouter l\'événement : non connecté');
-            return;
-        }
-
-        try {
-            $this->connection->on($event, $callback);
-            $this->logInfo('Écouteur ajouté pour l\'événement', ['event' => $event]);
-        } catch (Exception $e) {
-            $this->logError('Erreur lors de l\'ajout de l\'écouteur', ['error' => $e->getMessage()]);
+        if (isset($this->callbacks[$event])) {
+            $this->callbacks[$event][] = $callback;
+            $this->logInfo('Callback ajouté pour l\'événement', ['event' => $event]);
+        } else {
+            $this->logWarning('Événement non supporté', ['event' => $event]);
         }
     }
 

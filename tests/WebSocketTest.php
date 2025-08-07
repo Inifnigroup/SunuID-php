@@ -69,9 +69,8 @@ class WebSocketTest extends TestCase
         $config = $webSocket->getConfig();
         
         $this->assertEquals('wss://test.sunuid.sn/ws', $config['ws_url']);
-        $this->assertEquals(5000, $config['reconnect_interval']);
-        $this->assertEquals(10, $config['max_reconnect_attempts']);
-        $this->assertEquals(30000, $config['heartbeat_interval']);
+        $this->assertEquals(10, $config['connection_timeout']);
+        $this->assertTrue($config['enable_logs']);
     }
 
     /**
@@ -231,10 +230,8 @@ class WebSocketTest extends TestCase
         $webSocket = new SunuIDWebSocket();
         $config = $webSocket->getConfig();
         
-        $this->assertEquals('wss://api.sunuid.fayma.sn/ws', $config['ws_url']);
-        $this->assertEquals(5000, $config['reconnect_interval']);
-        $this->assertEquals(10, $config['max_reconnect_attempts']);
-        $this->assertEquals(30000, $config['heartbeat_interval']);
+        $this->assertEquals('wss://samasocket.fayma.sn:9443', $config['ws_url']);
+        $this->assertEquals(10, $config['connection_timeout']);
         $this->assertTrue($config['enable_logs']);
     }
 } 
