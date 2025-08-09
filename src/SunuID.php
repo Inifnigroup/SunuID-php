@@ -93,6 +93,10 @@ class SunuID
     public function __construct(array $config = [])
     {
         $this->config = array_merge(self::DEFAULT_CONFIG, $config);
+        // Définir une valeur par défaut sûre pour éviter les accès non définis
+        $this->partnerInfo = [
+            'partner_name' => $this->config['partner_name'] ?? ''
+        ];
         $this->initializeComponents();
     }
 
@@ -269,6 +273,13 @@ class SunuID
                 ];
 
                 $this->logInfo('Informations partenaire récupérées', $this->partnerInfo);
+            } else {
+                // Valeurs par défaut si la réponse ne contient pas les infos attendues
+                $this->partnerInfo = [
+                    'partner_name' => $this->config['partner_name'] ?? 'Partner_unknown',
+                    'partner_id' => 'unknown',
+                    'service_id' => 'unknown'
+                ];
             }
 
         } catch (\Exception $e) {
@@ -315,7 +326,7 @@ class SunuID
             $response = $this->makeRequest('/qr-generate', [
                 'type' => $this->config['type'],
                 'content' => $qrContent,
-                'label' => $this->getTypeName($this->config['type']) . ' ' . $this->partnerInfo['partner_name'],
+                'label' => $this->getTypeName($this->config['type']) . ' ' . ($this->partnerInfo['partner_name'] ?? ($this->config['partner_name'] ?? '')),
                 ...$options
             ]);
 
@@ -331,7 +342,7 @@ class SunuID
                     'session_id' => $response['data']['sessionId'] ?? $response['data']['session_id'] ?? '',
                     'label' => $response['data']['label'] ?? '',
                     'type' => $this->config['type'],
-                    'partner_name' => $this->partnerInfo['partner_name'] ?? '',
+                    'partner_name' => $this->partnerInfo['partner_name'] ?? ($this->config['partner_name'] ?? ''),
                     'expires_at' => $response['data']['expires_at'] ?? null
                 ]
             ];

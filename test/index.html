@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Test d'intégration SunuID (HTML)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol'; margin: 0; padding: 24px; background: #f6f7fb; color: #111; }
+    .container { max-width: 960px; margin: 0 auto; }
+    h1 { margin: 0 0 8px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin: 16px 0; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    button { background: #111827; border: 0; color: #fff; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
+    button.secondary { background: #475569; }
+    button.ghost { background: transparent; border: 1px solid #cbd5e1; color: #111; }
+    .status { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; border: 1px solid #e5e7eb; }
+    .status.ok { background: #dcfce7; border-color: #86efac; }
+    .status.warn { background: #fef9c3; border-color: #fde047; }
+    .status.err { background: #fee2e2; border-color: #fecaca; }
+    pre { background: #0b1220; color: #e5e7eb; padding: 12px; border-radius: 8px; overflow: auto; max-height: 280px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .metric { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; text-align: center; }
+    .metric .val { font-size: 22px; font-weight: 700; }
+    .muted { color: #6b7280; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 Test d'intégration SunuID</h1>
+    <div class="muted">Interface HTML + JS, API: <code>test/api.php</code></div>
+
+    <div class="card">
+      <h3>1) Configuration</h3>
+      <div class="row" style="margin:8px 0 12px">
+        <button onclick="loadConfig()">Charger la configuration</button>
+        <span id="cfgStatus" class="status">En attente</span>
+      </div>
+      <pre id="cfgOut">(vide)</pre>
+    </div>
+
+    <div class="card">
+      <h3>2) Connexion Socket.IO</h3>
+      <div class="row" style="margin:8px 0 12px">
+        <button onclick="initWS()">Initialiser</button>
+        <button class="secondary" onclick="connectWS()">Se connecter</button>
+        <button class="ghost" onclick="disconnectWS()">Se déconnecter</button>
+        <button class="ghost" onclick="statusWS()">Statut</button>
+        <span id="connStatus" class="status">Déconnecté</span>
+      </div>
+      <pre id="connOut">(logs)</pre>
+    </div>
+
+    <div class="card">
+      <h3>3) Événements & Messages</h3>
+      <div class="row" style="margin:8px 0 12px">
+        <button onclick="setupCallbacks()">Configurer callbacks</button>
+        <button class="secondary" onclick="sendTestMessage()">Envoyer message test</button>
+      </div>
+      <pre id="evtOut">(logs)</pre>
+    </div>
+
+    <div class="card">
+      <h3>4) QR avec Socket.IO</h3>
+      <div class="row" style="margin:8px 0 12px">
+        <button onclick="generateQRWS()">Générer QR</button>
+        <span id="qrStatus" class="status">En attente</span>
+      </div>
+      <div id="qrBox"></div>
+      <pre id="qrOut">(logs)</pre>
+    </div>
+
+    <div class="card">
+      <h3>5) Métriques</h3>
+      <div class="grid">
+        <div class="metric"><div class="val" id="mSent">0</div><div class="muted">Messages envoyés</div></div>
+        <div class="metric"><div class="val" id="mRecv">0</div><div class="muted">Messages reçus</div></div>
+        <div class="metric"><div class="val" id="mErr">0</div><div class="muted">Erreurs</div></div>
+        <div class="metric"><div class="val" id="mReco">0</div><div class="muted">Reconnexions</div></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button onclick="getMetrics()">Actualiser</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>6) Test complet</h3>
+      <div class="row" style="margin:8px 0 12px">
+        <button onclick="runAll()">Lancer</button>
+        <span id="runStatus" class="status">En attente</span>
+      </div>
+      <pre id="runOut">(résultats)</pre>
+    </div>
+  </div>
+
+  <script>
+    function out(id, data, append=false){
+      const el = document.getElementById(id);
+      const txt = (typeof data === 'string') ? data : JSON.stringify(data, null, 2);
+      el.textContent = append ? (el.textContent + '\n' + txt) : txt;
+    }
+    function statusEl(id, text, cls){
+      const el = document.getElementById(id);
+      el.textContent = text;
+      el.className = 'status ' + (cls || '');
+    }
+    async function api(action, body){
+      const opt = body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {};
+      const res = await fetch('api.php?action='+encodeURIComponent(action), opt);
+      return res.json();
+    }
+
+    async function loadConfig(){
+      statusEl('cfgStatus', 'Chargement…', 'warn');
+      try{
+        const r = await api('load_config');
+        out('cfgOut', r);
+        statusEl('cfgStatus', r.success ? 'Chargé' : 'Erreur', r.success ? 'ok':'err');
+      }catch(e){ out('cfgOut', String(e)); statusEl('cfgStatus', 'Erreur', 'err'); }
+    }
+    async function initWS(){
+      out('connOut', 'Initialisation…', false);
+      const r = await api('init_websocket');
+      out('connOut', r, true);
+    }
+    async function connectWS(){
+      statusEl('connStatus','Connexion…','warn');
+      const r = await api('connect');
+      out('connOut', r, true);
+      statusEl('connStatus', r.success && r.data.connected ? 'Connecté' : 'Échec', r.success && r.data.connected ? 'ok':'err');
+    }
+    async function disconnectWS(){
+      const r = await api('disconnect');
+      out('connOut', r, true);
+      statusEl('connStatus', 'Déconnecté');
+    }
+    async function statusWS(){
+      const r = await api('status');
+      out('connOut', r, true);
+      statusEl('connStatus', r.success && r.data.connected ? 'Connecté' : 'Déconnecté', r.success && r.data.connected ? 'ok':'');
+    }
+    async function setupCallbacks(){
+      const r = await api('setup_callbacks');
+      out('evtOut', r, false);
+    }
+    async function sendTestMessage(){
+      const r = await api('send_message', { message: { event:'test_message', data: { message:'Hello Socket.IO!', ts: Date.now() } } });
+      out('evtOut', r, true);
+    }
+    async function generateQRWS(){
+      statusEl('qrStatus','Génération…','warn');
+      const r = await api('generate_qr_websocket');
+      out('qrOut', r, false);
+      const box = document.getElementById('qrBox');
+      box.innerHTML = '';
+      if(r.success && r.data.qr_code){
+        const img = new Image();
+        img.src = 'data:image/png;base64,'+r.data.qr_code;
+        img.style.maxWidth = '240px';
+        img.style.border = '1px solid #e5e7eb';
+        img.style.borderRadius = '8px';
+        img.style.padding = '6px';
+        box.appendChild(img);
+        statusEl('qrStatus','QR prêt','ok');
+      } else {
+        statusEl('qrStatus','Erreur','err');
+      }
+    }
+    async function getMetrics(){
+      const r = await api('get_metrics');
+      if(r.success){
+        const m = r.data.metrics||{};
+        document.getElementById('mSent').textContent = m.messages_sent||0;
+        document.getElementById('mRecv').textContent = m.messages_received||0;
+        document.getElementById('mErr').textContent  = m.errors||0;
+        document.getElementById('mReco').textContent = m.reconnections||0;
+      }
+    }
+    async function runAll(){
+      statusEl('runStatus','En cours…','warn');
+      const r = await api('run_complete_test');
+      out('runOut', r, false);
+      statusEl('runStatus', r.success ? 'Terminé' : 'Erreur', r.success ? 'ok':'err');
+    }
+  </script>
+</body>
+</html>
+
