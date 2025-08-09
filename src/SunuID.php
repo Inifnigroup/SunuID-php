@@ -12,6 +12,7 @@ use Monolog\Logger;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\RotatingFileHandler;
 use SunuID\WebSocket\SunuIDWebSocket;
+use SunuID\WebSocket\SunuIDWebSocketV4Bridge;
 
 /**
  * SDK PHP pour l'intégration des QR codes d'authentification et KYC SunuID
@@ -77,6 +78,7 @@ class SunuID
      * Client WebSocket
      */
     private ?SunuIDWebSocket $webSocket = null;
+    private ?SunuIDWebSocketV4Bridge $webSocketV4 = null;
 
     /**
      * Statut d'initialisation
@@ -648,7 +650,23 @@ class SunuID
                 ]
             ];
 
-            $this->webSocket = new SunuIDWebSocket($wsConfig);
+            if (($this->config['websocket_socketio_version'] ?? '2') === '4') {
+                $this->webSocketV4 = new SunuIDWebSocketV4Bridge([
+                    'bridge_url' => $this->config['websocket_v4_bridge_url'] ?? '',
+                    'token' => $this->config['client_id'],
+                    'type' => 'web',
+                    'userId' => $this->config['client_id'],
+                    'username' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+                    'query_params' => $this->config['websocket_query_params'],
+                    'enable_logs' => $this->config['enable_logs'],
+                    'log_level' => $this->config['log_level'],
+                    'log_file' => 'sunuid-websocket-v4.log',
+                ]);
+                $this->logInfo('Client WebSocket v4 (bridge) initialisé');
+            } else {
+                $this->webSocket = new SunuIDWebSocket($wsConfig);
+                $this->logInfo('Client WebSocket v2 initialisé');
+            }
             $this->logInfo('Client WebSocket initialisé');
 
             // Connexion automatique si configuré
@@ -668,14 +686,14 @@ class SunuID
      */
     public function connectWebSocket(): bool
     {
-        if (!$this->webSocket) {
+        if (!$this->webSocket && !$this->webSocketV4) {
             if (!$this->initWebSocket()) {
                 return false;
             }
         }
 
         try {
-            $result = $this->webSocket->connect();
+            $result = $this->webSocket ? $this->webSocket->connect() : $this->webSocketV4->connect();
             if ($result) {
                 $this->logInfo('Connexion WebSocket établie');
             }
@@ -691,12 +709,12 @@ class SunuID
      */
     public function subscribeToSession(string $sessionId): bool
     {
-        if (!$this->webSocket) {
+        if (!$this->webSocket && !$this->webSocketV4) {
             $this->logWarning('WebSocket non initialisé');
             return false;
         }
 
-        return $this->webSocket->subscribeToSession($sessionId);
+        return $this->webSocket ? $this->webSocket->subscribeToSession($sessionId) : $this->webSocketV4->subscribeToSession($sessionId);
     }
 
     /**
@@ -704,11 +722,11 @@ class SunuID
      */
     public function unsubscribeFromSession(string $sessionId): bool
     {
-        if (!$this->webSocket) {
+        if (!$this->webSocket && !$this->webSocketV4) {
             return false;
         }
 
-        return $this->webSocket->unsubscribeFromSession($sessionId);
+        return $this->webSocket ? $this->webSocket->unsubscribeFromSession($sessionId) : $this->webSocketV4->unsubscribeFromSession($sessionId);
     }
 
     /**
@@ -729,11 +747,11 @@ class SunuID
      */
     public function sendWebSocketMessage(array $data): bool
     {
-        if (!$this->webSocket) {
+        if (!$this->webSocket && !$this->webSocketV4) {
             return false;
         }
 
-        return $this->webSocket->sendMessage($data);
+        return $this->webSocket ? $this->webSocket->sendMessage($data) : $this->webSocketV4->sendMessage($data);
     }
 
     /**
@@ -746,6 +764,11 @@ class SunuID
             $this->webSocket = null;
             $this->logInfo('Déconnexion WebSocket');
         }
+        if ($this->webSocketV4) {
+            $this->webSocketV4->disconnect();
+            $this->webSocketV4 = null;
+            $this->logInfo('Déconnexion WebSocket v4 (bridge)');
+        }
     }
 
     /**
@@ -753,7 +776,7 @@ class SunuID
      */
     public function isWebSocketConnected(): bool
     {
-        return $this->webSocket && $this->webSocket->isConnected();
+        return ($this->webSocket && $this->webSocket->isConnected()) || ($this->webSocketV4 && $this->webSocketV4->isConnected());
     }
 
     /**
@@ -777,7 +800,7 @@ class SunuID
      */
     public function getWebSocketSocketId(): ?string
     {
-        return $this->webSocket?->getSocketId();
+        return $this->webSocket?->getSocketId() ?? $this->webSocketV4?->getSocketId();
     }
 
     /**
