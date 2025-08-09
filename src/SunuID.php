@@ -639,7 +639,13 @@ class SunuID
                 ]),
                 'enable_logs' => $this->config['enable_logs'],
                 'log_level' => $this->config['log_level'],
-                'log_file' => 'sunuid-websocket.log'
+                'log_file' => 'sunuid-websocket.log',
+                // Auto-register du SID côté serveur
+                'auto_register_sid' => true,
+                'register_event_name' => 'register_sid',
+                'register_payload_extra' => [
+                    'partner' => $this->config['partner_name'] ?? 'unknown'
+                ]
             ];
 
             $this->webSocket = new SunuIDWebSocket($wsConfig);

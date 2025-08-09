@@ -41,7 +41,11 @@ class SunuIDWebSocket
         // SSL
         'ssl_verify_peer' => true,
         'ssl_verify_peer_name' => true,
-        'allow_self_signed' => false
+        'allow_self_signed' => false,
+        // Enregistrement automatique du SID côté serveur
+        'auto_register_sid' => true,
+        'register_event_name' => 'register_sid',
+        'register_payload_extra' => []
     ];
 
     /**
@@ -150,6 +154,25 @@ class SunuIDWebSocket
             
             $this->logInfo('Connexion Socket.IO établie');
             $this->triggerCallbacks('connect');
+
+            // Optionnel: envoyer automatiquement un event d'enregistrement avec le SID
+            if (!empty($this->config['auto_register_sid'])) {
+                try {
+                    $sid = $this->getSocketId();
+                    $payload = array_merge([
+                        'sid' => $sid,
+                        'ts' => time(),
+                        'source' => 'php-sdk'
+                    ], is_array($this->config['register_payload_extra']) ? $this->config['register_payload_extra'] : []);
+                    $eventName = $this->config['register_event_name'] ?? 'register_sid';
+                    if ($sid) {
+                        $this->sendMessage(['event' => $eventName, 'data' => $payload]);
+                        $this->logInfo('Event auto-register envoyé', ['event' => $eventName, 'sid' => $sid]);
+                    }
+                } catch (Exception $e) {
+                    $this->logWarning('Auto-register SID échoué', ['error' => $e->getMessage()]);
+                }
+            }
 
             return true;
         } catch (ServerConnectionFailureException $e) {
