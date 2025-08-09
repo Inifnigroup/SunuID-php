@@ -579,6 +579,36 @@ class SunuIDWebSocket
     }
 
     /**
+     * Récupérer l'identifiant de socket (SID Engine.IO) si disponible
+     */
+    public function getSocketId(): ?string
+    {
+        if (!$this->connection) {
+            return null;
+        }
+
+        try {
+            // Utiliser la réflexion pour lire la session interne d'ElephantIO
+            $ref = new \ReflectionClass($this->connection);
+            if ($ref->hasProperty('session')) {
+                $prop = $ref->getProperty('session');
+                $prop->setAccessible(true);
+                $session = $prop->getValue($this->connection);
+                if ($session !== null) {
+                    $sidProp = new \ReflectionProperty($session, 'id');
+                    $sidProp->setAccessible(true);
+                    $sid = $sidProp->getValue($session);
+                    return is_string($sid) ? $sid : null;
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->logWarning('Impossible de récupérer le socketId', ['error' => $e->getMessage()]);
+        }
+
+        return null;
+    }
+
+    /**
      * Obtenir les sessions actives
      */
     public function getActiveSessions(): array

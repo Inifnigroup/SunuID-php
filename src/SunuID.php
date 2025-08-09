@@ -324,12 +324,22 @@ class SunuID
             $qrContent = $content ?? $this->generateSessionCode();
             
             // Générer le QR code via l'API
-            $response = $this->makeRequest('/qr-generate', [
+            $payload = [
                 'type' => $this->config['type'],
                 'content' => $qrContent,
                 'label' => $this->getTypeName($this->config['type']) . ' ' . ($this->partnerInfo['partner_name'] ?? ($this->config['partner_name'] ?? '')),
-                ...$options
-            ]);
+            ];
+
+            // Injecter le socketId si disponible (abonnement côté serveur)
+            $socketId = $this->webSocket?->getSocketId();
+            if (!empty($socketId)) {
+                $payload['socket_id'] = $socketId;
+            }
+
+            // Fusionner les options utilisateur
+            $payload = array_merge($payload, $options);
+
+            $response = $this->makeRequest('/qr-generate', $payload);
 
             if (!$response['success']) {
                 throw new \RuntimeException($response['message'] ?? 'Erreur lors de la génération du QR code');
@@ -752,6 +762,14 @@ class SunuID
     public function getWebSocketLastError(): ?string
     {
         return $this->webSocket?->getLastError();
+    }
+
+    /**
+     * Obtenir le socketId (SID Engine.IO) si connecté
+     */
+    public function getWebSocketSocketId(): ?string
+    {
+        return $this->webSocket?->getSocketId();
     }
 
     /**
