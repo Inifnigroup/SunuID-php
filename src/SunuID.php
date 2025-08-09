@@ -323,6 +323,29 @@ class SunuID
             // Utiliser le contenu fourni ou générer un contenu par défaut
             $qrContent = $content ?? $this->generateSessionCode();
             
+            // Préparer contenu et socket
+            $socketId = $this->webSocket?->getSocketId();
+
+            // Si le contenu est une URL, y injecter le socket_id en query pour que votre backend le reçoive
+            if (!empty($socketId) && is_string($qrContent)) {
+                $parts = parse_url($qrContent);
+                if ($parts !== false && isset($parts['scheme']) && isset($parts['host'])) {
+                    // reconstruire la query en ajoutant socket_id si absent
+                    $query = [];
+                    if (!empty($parts['query'])) {
+                        parse_str($parts['query'], $query);
+                    }
+                    if (!isset($query['socket_id'])) {
+                        $query['socket_id'] = $socketId;
+                        $newQuery = http_build_query($query);
+                        $path = $parts['path'] ?? '';
+                        $frag = isset($parts['fragment']) ? ('#' . $parts['fragment']) : '';
+                        $port = isset($parts['port']) ? (':' . $parts['port']) : '';
+                        $qrContent = $parts['scheme'] . '://' . $parts['host'] . $port . $path . '?' . $newQuery . $frag;
+                    }
+                }
+            }
+
             // Générer le QR code via l'API
             $payload = [
                 'type' => $this->config['type'],
@@ -331,7 +354,6 @@ class SunuID
             ];
 
             // Injecter le socketId si disponible (abonnement côté serveur)
-            $socketId = $this->webSocket?->getSocketId();
             if (!empty($socketId)) {
                 $payload['socket_id'] = $socketId;
             }
