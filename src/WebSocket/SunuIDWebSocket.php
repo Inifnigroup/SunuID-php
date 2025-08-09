@@ -126,6 +126,8 @@ class SunuIDWebSocket
             $clientOptions = [
                 'timeout' => $this->config['connection_timeout'],
                 'transports' => $this->config['transports'],
+                // NB: ElephantIO ne lit pas les query params depuis 'options';
+                // ils doivent être sur l'URL. On conserve la clé pour compat, mais on construit l'URL ci-dessous.
                 'query' => $this->config['query_params'],
                 'headers' => $this->config['headers'],
                 'ssl' => [
@@ -135,16 +137,25 @@ class SunuIDWebSocket
                 ]
             ];
 
+            // Construire l'URL avec les paramètres de requête (obligatoire pour ElephantIO)
+            $baseUrl = $this->config['ws_url'];
+            $qs = http_build_query($this->config['query_params'] ?? []);
+            $urlWithQuery = $baseUrl;
+            if (!empty($qs)) {
+                $urlWithQuery = $baseUrl . ((strpos($baseUrl, '?') !== false) ? '&' : '?') . $qs;
+            }
+            $this->logInfo('URL Socket.IO', ['url' => $urlWithQuery]);
+
             switch ($this->config['socketio_version']) {
                 case '0':
-                    $this->connection = new Version0X($this->config['ws_url'], $clientOptions);
+                    $this->connection = new Version0X($urlWithQuery, $clientOptions);
                     break;
                 case '1':
-                    $this->connection = new Version1X($this->config['ws_url'], $clientOptions);
+                    $this->connection = new Version1X($urlWithQuery, $clientOptions);
                     break;
                 case '2':
                 default:
-                    $this->connection = new Version2X($this->config['ws_url'], $clientOptions);
+                    $this->connection = new Version2X($urlWithQuery, $clientOptions);
                     break;
             }
 

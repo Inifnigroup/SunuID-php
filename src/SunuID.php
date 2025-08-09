@@ -631,12 +631,12 @@ class SunuID
                 'ws_url' => $this->config['websocket_url'],
                 'socketio_version' => $this->config['websocket_socketio_version'],
                 'transports' => $this->config['websocket_transports'],
-                'query_params' => array_merge($this->config['websocket_query_params'], [
+                'query_params' => array_merge([
                     'token' => $this->config['client_id'],
                     'type' => 'web',
                     'userId' => $this->config['client_id'],
                     'username' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
-                ]),
+                ], $this->config['websocket_query_params']),
                 'enable_logs' => $this->config['enable_logs'],
                 'log_level' => $this->config['log_level'],
                 'log_file' => 'sunuid-websocket.log',
