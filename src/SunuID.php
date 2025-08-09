@@ -45,7 +45,8 @@ class SunuID
         'force_remote_server' => true,
         'use_local_fallback' => false,
         'enable_websocket' => false,
-        'websocket_url' => 'wss://samasocket.fayma.sn:9443',
+        // ElephantIO attend généralement http(s) pour l'handshake Socket.IO
+        'websocket_url' => 'https://samasocket.fayma.sn:9443',
         'websocket_auto_connect' => false,
         'websocket_socketio_version' => '2',
         'websocket_transports' => ['websocket', 'polling'],
@@ -633,7 +634,7 @@ class SunuID
             }
 
             return true;
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             $this->logError('Erreur lors de l\'initialisation WebSocket', ['error' => $e->getMessage()]);
             return false;
         }
@@ -656,7 +657,7 @@ class SunuID
                 $this->logInfo('Connexion WebSocket établie');
             }
             return $result;
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             $this->logError('Erreur lors de la connexion WebSocket', ['error' => $e->getMessage()]);
             return false;
         }

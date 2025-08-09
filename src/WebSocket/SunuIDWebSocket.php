@@ -26,8 +26,10 @@ class SunuIDWebSocket
      * Configuration par défaut
      */
     private const DEFAULT_CONFIG = [
-        'ws_url' => 'wss://samasocket.fayma.sn:9443',
-        'socketio_version' => '4',
+        // ElephantIO (v3) attend un endpoint http(s) pour l'handshake Socket.IO
+        'ws_url' => 'https://samasocket.fayma.sn:9443',
+        // Version 2 par défaut (supportée par ElephantIO 3.x)
+        'socketio_version' => '2',
         'connection_timeout' => 10,
         'enable_logs' => true,
         'log_level' => Logger::INFO,
@@ -114,7 +116,9 @@ class SunuIDWebSocket
                     break;
                 case '1':
                     $this->connection = new Version1X($this->config['ws_url'], [
-                        'timeout' => $this->config['connection_timeout']
+                        'timeout' => $this->config['connection_timeout'],
+                        'transports' => $this->config['transports'],
+                        'query' => $this->config['query_params']
                     ]);
                     break;
                 case '2':
