@@ -335,12 +335,17 @@ class SunuID
                 throw new \RuntimeException($response['message'] ?? 'Erreur lors de la génération du QR code');
             }
 
+            $sessionId = $response['data']['sessionId']
+                ?? $response['data']['session_id']
+                ?? $response['data']['serviceId']
+                ?? '';
+
             $result = [
                 'success' => true,
                 'data' => [
                     'qr_code' => $response['data']['qrCodeUrl'] ?? $response['data']['qr_code'] ?? '',
                     'content' => $qrContent,
-                    'session_id' => $response['data']['sessionId'] ?? $response['data']['session_id'] ?? '',
+                    'session_id' => $sessionId,
                     'label' => $response['data']['label'] ?? '',
                     'type' => $this->config['type'],
                     'partner_name' => $this->partnerInfo['partner_name'] ?? ($this->config['partner_name'] ?? ''),
@@ -739,6 +744,14 @@ class SunuID
     public function getWebSocket(): ?SunuIDWebSocket
     {
         return $this->webSocket;
+    }
+
+    /**
+     * Obtenir la dernière erreur WebSocket (si disponible)
+     */
+    public function getWebSocketLastError(): ?string
+    {
+        return $this->webSocket?->getLastError();
     }
 
     /**

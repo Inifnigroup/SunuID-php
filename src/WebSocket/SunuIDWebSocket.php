@@ -35,7 +35,13 @@ class SunuIDWebSocket
         'log_level' => Logger::INFO,
         'log_file' => 'sunuid-websocket.log',
         'transports' => ['websocket', 'polling'],
-        'query_params' => []
+        'query_params' => [],
+        // Options additionnelles
+        'headers' => [],
+        // SSL
+        'ssl_verify_peer' => true,
+        'ssl_verify_peer_name' => true,
+        'allow_self_signed' => false
     ];
 
     /**
@@ -79,6 +85,11 @@ class SunuIDWebSocket
     private array $activeSessions = [];
 
     /**
+     * Dernière erreur
+     */
+    private ?string $lastError = null;
+
+    /**
      * Constructeur
      */
     public function __construct(array $config = [])
@@ -108,26 +119,28 @@ class SunuIDWebSocket
             $this->logInfo('Tentative de connexion Socket.IO', ['url' => $this->config['ws_url']]);
 
             // Créer le client Socket.IO selon la version
+            $clientOptions = [
+                'timeout' => $this->config['connection_timeout'],
+                'transports' => $this->config['transports'],
+                'query' => $this->config['query_params'],
+                'headers' => $this->config['headers'],
+                'ssl' => [
+                    'verify_peer' => $this->config['ssl_verify_peer'],
+                    'verify_peer_name' => $this->config['ssl_verify_peer_name'],
+                    'allow_self_signed' => $this->config['allow_self_signed']
+                ]
+            ];
+
             switch ($this->config['socketio_version']) {
                 case '0':
-                    $this->connection = new Version0X($this->config['ws_url'], [
-                        'timeout' => $this->config['connection_timeout']
-                    ]);
+                    $this->connection = new Version0X($this->config['ws_url'], $clientOptions);
                     break;
                 case '1':
-                    $this->connection = new Version1X($this->config['ws_url'], [
-                        'timeout' => $this->config['connection_timeout'],
-                        'transports' => $this->config['transports'],
-                        'query' => $this->config['query_params']
-                    ]);
+                    $this->connection = new Version1X($this->config['ws_url'], $clientOptions);
                     break;
                 case '2':
                 default:
-                    $this->connection = new Version2X($this->config['ws_url'], [
-                        'timeout' => $this->config['connection_timeout'],
-                        'transports' => $this->config['transports'],
-                        'query' => $this->config['query_params']
-                    ]);
+                    $this->connection = new Version2X($this->config['ws_url'], $clientOptions);
                     break;
             }
 
@@ -141,10 +154,12 @@ class SunuIDWebSocket
             return true;
         } catch (ServerConnectionFailureException $e) {
             $this->logError('Échec de connexion Socket.IO', ['error' => $e->getMessage()]);
+            $this->lastError = $e->getMessage();
             $this->triggerCallbacks('error', ['error' => $e->getMessage()]);
             return false;
         } catch (Exception $e) {
             $this->logError('Erreur lors de la connexion Socket.IO', ['error' => $e->getMessage()]);
+            $this->lastError = $e->getMessage();
             $this->triggerCallbacks('error', ['error' => $e->getMessage()]);
             return false;
         }
@@ -553,6 +568,14 @@ class SunuIDWebSocket
     public function isConnected(): bool
     {
         return $this->isConnected;
+    }
+
+    /**
+     * Obtenir le dernier message d'erreur
+     */
+    public function getLastError(): ?string
+    {
+        return $this->lastError;
     }
 
     /**
