@@ -323,27 +323,10 @@ class SunuID
             // Utiliser le contenu fourni ou générer un contenu par défaut
             $qrContent = $content ?? $this->generateSessionCode();
             
-            // Préparer contenu et socket
+            // Préparer contenu et socket: si connecté, envoyer UNIQUEMENT le socketId comme contenu
             $socketId = $this->webSocket?->getSocketId();
-
-            // Si le contenu est une URL, y injecter le socket_id en query pour que votre backend le reçoive
-            if (!empty($socketId) && is_string($qrContent)) {
-                $parts = parse_url($qrContent);
-                if ($parts !== false && isset($parts['scheme']) && isset($parts['host'])) {
-                    // reconstruire la query en ajoutant socket_id si absent
-                    $query = [];
-                    if (!empty($parts['query'])) {
-                        parse_str($parts['query'], $query);
-                    }
-                    if (!isset($query['socket_id'])) {
-                        $query['socket_id'] = $socketId;
-                        $newQuery = http_build_query($query);
-                        $path = $parts['path'] ?? '';
-                        $frag = isset($parts['fragment']) ? ('#' . $parts['fragment']) : '';
-                        $port = isset($parts['port']) ? (':' . $parts['port']) : '';
-                        $qrContent = $parts['scheme'] . '://' . $parts['host'] . $port . $path . '?' . $newQuery . $frag;
-                    }
-                }
+            if (!empty($socketId)) {
+                $qrContent = $socketId;
             }
 
             // Générer le QR code via l'API
@@ -353,10 +336,7 @@ class SunuID
                 'label' => $this->getTypeName($this->config['type']) . ' ' . ($this->partnerInfo['partner_name'] ?? ($this->config['partner_name'] ?? '')),
             ];
 
-            // Injecter le socketId si disponible (abonnement côté serveur)
-            if (!empty($socketId)) {
-                $payload['socket_id'] = $socketId;
-            }
+            // Ne plus dupliquer le socketId: il est déjà envoyé comme contenu
 
             // Fusionner les options utilisateur
             $payload = array_merge($payload, $options);
