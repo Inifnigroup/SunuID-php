@@ -77,9 +77,9 @@ if ($sunuid->init()) {
 | `request_timeout` | int | `10` | Timeout des requêtes (secondes) |
 | `max_retries` | int | `3` | Nombre max de tentatives |
 | `enable_websocket` | bool | `false` | Activer les Socket.IO |
-| `websocket_url` | string | `wss://samasocket.fayma.sn:9443` | URL Socket.IO |
+| `websocket_url` | string | `https://samasocket.fayma.sn:9443` | Endpoint Socket.IO (handshake http/https) |
 | `websocket_auto_connect` | bool | `false` | Connexion automatique |
-| `websocket_socketio_version` | string | `4` | Version Socket.IO (2, 3, 4) |
+| `websocket_socketio_version` | string | `2` | Version Socket.IO (0, 1, 2 pris en charge par ElephantIO) |
 | `websocket_transports` | array | `['websocket', 'polling']` | Transports supportés |
 | `websocket_query_params` | array | `[]` | Paramètres de requête additionnels |
 
@@ -111,8 +111,8 @@ $config = [
     'partner_name' => 'Votre Entreprise',
     'enable_websocket' => true,
     'websocket_auto_connect' => true,
-    'websocket_url' => 'wss://samasocket.fayma.sn:9443',
-    'websocket_socketio_version' => '4',
+    'websocket_url' => 'https://samasocket.fayma.sn:9443',
+    'websocket_socketio_version' => '2',
     'websocket_transports' => ['websocket', 'polling']
 ];
 
@@ -120,7 +120,10 @@ $sunuid = new SunuID($config);
 
 // Initialiser et connecter le Socket.IO
 $sunuid->initWebSocket();
-$sunuid->connectWebSocket();
+if (!$sunuid->connectWebSocket()) {
+    // Diagnostic rapide en cas d'échec
+    echo "Erreur Socket.IO: " . ($sunuid->getWebSocketLastError() ?? 'inconnue') . "\n";
+}
 
 // Configurer les callbacks pour les événements
 $sunuid->onWebSocketEvent('auth_success', function ($data) {
@@ -179,6 +182,31 @@ composer test-coverage
 # Tests de qualité du code
 composer stan
 composer cs
+```
+
+### Tests d'intégration
+
+- Interface web: lancer un serveur local puis ouvrir l'UI de test
+
+```bash
+php -S localhost:8000 -t test
+# Naviguer vers http://localhost:8000/index.html
+```
+
+- API/CLI: test complet côté ligne de commande
+
+```bash
+php test_socketio_integration.php
+```
+
+## 🛠️ Dépannage Socket.IO
+
+- Handshake ElephantIO: utiliser un endpoint `http/https` (pas `wss`) pour `websocket_url`.
+- Version supportée: configurer `websocket_socketio_version` sur `"2"` (ElephantIO 3.x)
+- Message Deprecated ElephantIO sous PHP 8.2+: inoffensif. Pour le masquer dans vos scripts de test:
+
+```php
+error_reporting(E_ALL ^ E_DEPRECATED);
 ```
 
 ## 📝 Exemples
