@@ -781,6 +781,14 @@ class SunuID
     }
 
     /**
+     * Attendre les événements WebSocket pendant une durée donnée
+     */
+    public function waitWebSocketEvents(int $durationSeconds = 30, int $sleepMicros = 250000): void
+    {
+        $this->webSocket?->waitForEvents($durationSeconds, $sleepMicros);
+    }
+
+    /**
      * Obtenir les sessions actives du WebSocket
      */
     public function getWebSocketActiveSessions(): array

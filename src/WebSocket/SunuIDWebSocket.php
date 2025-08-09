@@ -210,13 +210,26 @@ class SunuIDWebSocket
 
         try {
             $message = $this->connection->read();
-            
+
             if ($message) {
-                $data = is_array($message) ? $message : json_decode($message, true);
-                
-                if ($data) {
-                    $this->handleMessage($data);
-                    return $data;
+                // Socket.IO: évènements encodés comme 42["event",{...}] (namespace: 42/room,[...])
+                if (is_string($message)) {
+                    $parsed = $this->parseSocketIoEvent($message);
+                    if ($parsed !== null) {
+                        [$event, $payload] = $parsed;
+                        $this->logInfo('Événement Socket.IO reçu', ['event' => $event]);
+                        $this->triggerCallbacks($event, $payload);
+                        return ['event' => $event, 'data' => $payload];
+                    }
+                    // Tentative de JSON brut
+                    $data = json_decode($message, true);
+                    if (is_array($data)) {
+                        $this->handleMessage($data);
+                        return $data;
+                    }
+                } elseif (is_array($message)) {
+                    $this->handleMessage($message);
+                    return $message;
                 }
             }
         } catch (Exception $e) {
@@ -224,6 +237,53 @@ class SunuIDWebSocket
         }
 
         return null;
+    }
+
+    /**
+     * Parser un payload Socket.IO pour extraire l'événement et les données
+     * Formats supportés:
+     *   42["event",{...}]
+     *   42/namespace,["event",{...}]
+     */
+    private function parseSocketIoEvent(string $payload): ?array
+    {
+        // 42 = EVENT
+        if (strpos($payload, '42') !== 0) {
+            return null;
+        }
+
+        $rest = substr($payload, 2);
+
+        // Gérer un namespace optionnel: 42/namespace,[...]
+        if (strlen($rest) > 0 && $rest[0] === '/') {
+            $commaPos = strpos($rest, ',');
+            if ($commaPos === false) {
+                return null;
+            }
+            // $namespace = substr($rest, 0, $commaPos);
+            $rest = substr($rest, $commaPos + 1);
+        }
+
+        // Le reste doit être un JSON array [event, data]
+        $arr = json_decode($rest, true);
+        if (!is_array($arr) || !isset($arr[0])) {
+            return null;
+        }
+        $event = (string)$arr[0];
+        $data = $arr[1] ?? [];
+        return [$event, is_array($data) ? $data : ['data' => $data]];
+    }
+
+    /**
+     * Boucle d'attente pour consommer les messages et garder la connexion vivante
+     */
+    public function waitForEvents(int $durationSeconds = 30, int $sleepMicros = 250000): void
+    {
+        $endAt = microtime(true) + $durationSeconds;
+        while ($this->isConnected && microtime(true) < $endAt) {
+            $this->receive();
+            usleep($sleepMicros);
+        }
     }
 
     /**
